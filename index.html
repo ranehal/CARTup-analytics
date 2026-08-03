@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1120">
+<meta name="description" content="CartUp price history & deals tracker — category, subcategory and campaign product intelligence with daily snapshots.">
+<title>CartUp Price Tracker</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+<link rel="stylesheet" href="styles.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">▲</span>
+    <div class="brand-txt"><h1>CartUp <em>Tracker</em></h1><small id="lastUpdated">loading…</small></div>
+  </div>
+  <div class="stat-chips" id="statChips"></div>
+  <div class="top-actions">
+    <button class="ghost" id="analyticsBtn">Analytics</button>
+    <button class="ghost" id="compareBtn">Compare <b id="compareCount">0</b></button>
+    <button class="ghost" id="alertsBtn">Alerts <b id="alertCount" class="pill">0</b></button>
+  </div>
+</header>
+
+<div class="shell">
+  <aside class="rail" id="rail">
+    <button class="rail-toggle" id="railToggle" aria-label="Toggle categories">☰</button>
+    <nav id="railNav"></nav>
+    <div class="rail-foot">
+      <button id="exportBtn">Export CSV</button>
+    </div>
+  </aside>
+
+  <main class="content">
+    <section class="section-strip" id="sectionStrip" aria-label="Campaigns and deals"></section>
+
+    <div class="toolbar">
+      <label class="search-box"><span>⌕</span><input id="searchInput" type="search" placeholder="Search products, categories…"></label>
+      <label class="field"><span>Category</span><select id="topSelect"></select></label>
+      <label class="field"><span>Subcategory</span><select id="subSelect"></select></label>
+      <label class="field"><span>Sort</span><select id="sortSelect">
+        <option value="smart">Smart score</option>
+        <option value="discount">Biggest discount</option>
+        <option value="drop">Biggest drop (30d)</option>
+        <option value="priceAsc">Price low → high</option>
+        <option value="priceDesc">Price high → low</option>
+        <option value="rating">Top rated</option>
+        <option value="name">Name A–Z</option>
+      </select></label>
+      <label class="field"><span>Discount</span><select id="discountSelect">
+        <option value="0">Any</option><option value="10">10%+</option>
+        <option value="25">25%+</option><option value="50">50%+</option>
+        <option value="70">70%+</option>
+      </select></label>
+      <label class="check"><input type="checkbox" id="stockOnly" checked> In stock</label>
+      <label class="check"><input type="checkbox" id="lowsOnly"> All-time lows</label>
+      <label class="range"><span>Max ৳<b id="maxPriceLabel">10,000</b></span>
+        <input type="range" id="maxPrice" min="50" max="100000" step="50" value="100000"></label>
+      <button class="ghost tiny" id="clearBtn" title="Reset filters">Reset</button>
+    </div>
+
+    <div class="list-head"><h2 id="listTitle">All products</h2><span id="resultCount" class="count-chip"></span></div>
+
+    <div class="product-grid" id="grid"></div>
+    <div id="sentinel" class="sentinel"><span class="spinner"></span></div>
+    <p class="empty" id="emptyState" hidden>No products match these filters.</p>
+  </main>
+</div>
+
+<dialog id="historyModal" class="dialog history-dialog">
+  <header class="dialog-head">
+    <div><h2 id="historyName"></h2><p id="historyMeta"></p></div>
+    <button class="dialog-x" data-close aria-label="Close">×</button>
+  </header>
+  <div class="history-body">
+    <section class="chart-panel">
+      <div class="chart-toolbar">
+        <div class="range-switch" id="rangeSwitch">
+          <button data-range="30">30D</button><button data-range="90" class="is-active">90D</button>
+          <button data-range="365">1Y</button><button data-range="0">All</button>
+        </div>
+        <span class="hint">dashed = window average</span>
+      </div>
+      <div class="chart-wrap" id="chartWrap">
+        <svg id="historyChart" viewBox="0 0 1000 470" preserveAspectRatio="none"></svg>
+        <div class="chart-tip" id="chartTip" hidden></div>
+      </div>
+    </section>
+    <aside class="history-side">
+      <small>Current price</small><strong class="price-big" id="historyCurrent"></strong>
+      <div class="history-stats" id="historyStats"></div>
+      <div class="history-events" id="historyEvents"></div>
+      <nav class="history-nav"><button id="historyPrev">← Previous</button><button id="historyNext">Next →</button></nav>
+    </aside>
+  </div>
+</dialog>
+
+<dialog id="compareModal" class="dialog compare-dialog">
+  <header class="dialog-head"><div><h2>Compare products</h2><p>Normalised % change over the window.</p></div><button class="dialog-x" data-close>×</button></header>
+  <div id="compareContent"></div>
+</dialog>
+
+<dialog id="analyticsModal" class="dialog analytics-dialog">
+  <header class="dialog-head"><div><h2>Market analytics</h2><p id="analyticsMeta"></p></div><button class="dialog-x" data-close>×</button></header>
+  <div id="analyticsContent"></div>
+</dialog>
+
+<dialog id="alertsModal" class="dialog alerts-dialog">
+  <header class="dialog-head"><div><h2>Price targets</h2><p>Get pinged when a product crosses your target.</p></div><button class="dialog-x" data-close>×</button></header>
+  <div class="alert-form"><input id="alertInput" type="search" placeholder="Paste product name or search here"><button id="alertAddBtn">Add</button></div>
+  <div id="alertsList" class="alerts-list"></div>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# Python & Node cache
+__pycache__/
+*.py[cod]
+node_modules/
+*.log
+*.har
+
+# OS / editor
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
+
+
