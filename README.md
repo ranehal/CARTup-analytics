@@ -27,6 +27,16 @@ The platform reverse-engineers CartUp's mobile app security headers (`sxsrf`), e
 
 ---
 
+## 📸 Screenshots
+
+> Captured from a live localhost run of the dashboard.
+
+| Dashboard |
+| :---: |
+| ![CartUp Analytics Dashboard](screenshots/dashboard.png) |
+
+---
+
 ## 🏗️ System Architecture
 
 ```mermaid
@@ -129,6 +139,41 @@ python scraper.py --scope=full
 # Serve web dashboard locally
 python -m http.server 3000
 ```
+
+---
+
+## 🚀 Future Work — Production-Grade Roadmap
+
+The following roadmap outlines the engineering steps required to evolve **CARTup Analytics** from a local/research tool into a polished, industrial-grade product:
+
+### 1. Architecture & Infrastructure
+- **Containerization & Orchestration**: Package scraper + dashboard as Docker images; deploy with `docker-compose` locally and Kubernetes (EKS/GKE) for horizontal scaling.
+- **Managed Databases**: Migrate from file-based JSON + local SQLite to a managed PostgreSQL (RDS/Cloud SQL) with proper indexing, partitioning (daily/monthly price tables), and connection pooling (PgBouncer).
+- **Message Queue for Ingestion**: Replace naive in-process concurrency with a broker-backed pipeline (Redis Streams / RabbitMQ / Kafka) for retryable, resumable catalog harvesting with dead-letter queues.
+- **Object Storage + CDN**: Store raw daily snapshots in S3/Cloudflare R2 with a CDN (CloudFront/Cloudflare) for static assets and datasets; enforce lifecycle policies for archival.
+- **Caching Layer**: Redis for hot queries (stats, category trees, recent products) with TTL-based invalidation; ETag/If-Modified-Since headers on all API responses.
+
+### 2. Reliability & Observability
+- **Structured Logging & Tracing**: Replace `print`/log files with JSON structured logging (pino/structlog), correlated request IDs, and OpenTelemetry tracing across scraper → queue → DB → API.
+- **Metrics & Alerting**: Prometheus metrics (scrape success rate, latency percentiles, job durations) + Grafana dashboards + PagerDuty/AlertManager alerts on pipeline failure.
+- **SLOs & Health Checks**: `/health`, `/ready` endpoints; scraper watchdog that auto-recovers from stuck sessions; idempotent job resumption from checkpoint state.
+- **Automated Testing**: Unit tests for token derivation, delta compression, and API parsing; integration tests with recorded fixtures; end-to-end Playwright tests for the dashboard.
+
+### 3. Security & Compliance
+- **Secret Management**: Move all credentials into a vault (AWS Secrets Manager / HashiCorp Vault / Doppler) — never baked into images or repos.
+- **Auth & Rate Limiting**: API-key/JWT-based access control with per-tenant rate limiting (e.g., `limits` / Kong); TLS everywhere; dependency scanning (Snyk/Dependabot) and SBOM generation.
+- **Respectful Crawling**: Implement robots.txt compliance, domain-wide polite rate limiting, exponential backoff, and traffic shaping to avoid impacting the upstream service.
+
+### 4. Data Platform & Analytics
+- **Warehouse & BI**: Land normalized datasets into a columnar warehouse (ClickHouse/BigQuery) with dbt for transformations; build Looker/Metabase dashboards.
+- **Streaming Prices**: Migrate daily batch snapshots to near-real-time streaming (Kafka → Flink/Spark Structured Streaming) for live price movement detection.
+- **ML / Forecasting**: Add time-series forecasting (Prophet/ARIMA/LightGBM) for price prediction, anomaly detection on price drops, and personalized deal recommendations.
+
+### 5. Product & UX
+- **User Accounts & Sync**: OAuth2 accounts, cross-device watchlists/alerts, and email/push notifications (SendGrid/FCM) when target prices are hit.
+- **Public API & Docs**: Versioned, documented public REST API (OpenAPI) with rate limits and developer keys; optional GraphQL gateway.
+- **Localization & Accessibility**: Full i18n (bn/en), WCAG 2.1 AA compliance, dark/light theming consistency, and mobile-first responsive PWA with offline mode.
+- **Performance Budget**: Code-splitting, virtualized product lists, lazy-loaded charts, and Lighthouse budgets enforced in CI (CLS < 0.1, LCP < 2.5s).
 
 ---
 
