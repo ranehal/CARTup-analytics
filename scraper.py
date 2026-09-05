@@ -21,6 +21,12 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from urllib import error, request
 
+try:
+    getattr(sys.stdout, "reconfigure", lambda **kw: None)(encoding="utf-8", errors="replace")
+    getattr(sys.stderr, "reconfigure", lambda **kw: None)(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 BASE = "https://api.cartup.com"
 IMG = "https://sl-dev-s3.s3.amazonaws.com"
 
@@ -73,38 +79,54 @@ class Api:
 
     def log(self, label, value):
         if not self.quiet:
-            print(f"  {label}: {value}")
+            print(f"  {label}: {value}", flush=True)
 
-    def _open(self, url):
+    def _open(self, url, retries=3):
         headers = {
             "user-agent": "Dart/3.11 (dart:io)",
             "origin": "cartup-prod",
             "isapp": "1",
             "accept-encoding": "gzip",
         }
-        if self.token:
-            headers["sxsrf"] = self.token
-
-        def do():
-            return request.urlopen(request.Request(url, headers=headers), timeout=30)
-
-        try:
-            resp = do()
-        except error.HTTPError as e:
-            if e.code != 401:
-                raise
-            t = e.headers.get("cf-ray-status-id-tn")
-            if not t:
-                raise
+        for attempt in range(retries):
             with self._lock:
-                self.token = wrap(t)
-            headers["sxsrf"] = self.token
-            resp = do()
+                tok = self.token
+            if tok:
+                headers["sxsrf"] = tok
 
-        data = resp.read()
-        if resp.headers.get("Content-Encoding", "") == "gzip":
-            data = gzip.decompress(data)
-        return data
+            def do():
+                return request.urlopen(request.Request(url, headers=headers), timeout=30)
+
+            try:
+                resp = do()
+                data = resp.read()
+                if resp.headers.get("Content-Encoding", "") == "gzip":
+                    data = gzip.decompress(data)
+                return data
+            except error.HTTPError as e:
+                if e.code == 401:
+                    t = e.headers.get("cf-ray-status-id-tn")
+                    if t:
+                        with self._lock:
+                            self.token = wrap(t)
+                        headers["sxsrf"] = self.token
+                        try:
+                            resp = do()
+                            data = resp.read()
+                            if resp.headers.get("Content-Encoding", "") == "gzip":
+                                data = gzip.decompress(data)
+                            return data
+                        except Exception:
+                            pass
+                if attempt < retries - 1:
+                    time.sleep(1 + attempt)
+                else:
+                    raise
+            except Exception:
+                if attempt < retries - 1:
+                    time.sleep(1 + attempt)
+                else:
+                    raise
 
     def get_json(self, path):
         url = path if path.startswith("http") else BASE + path
@@ -131,11 +153,16 @@ class Api:
                 return self.get_json(url_for(p))
 
             with ThreadPoolExecutor(max_workers=n) as ex:
-                for p in range(2, pages + 1):
-                    j = ex.submit(fetch, p).result()
-                    arr = items(j)
-                    if arr:
-                        all_items.extend(arr)
+                futures = [ex.submit(fetch, p) for p in range(2, pages + 1)]
+                for f in futures:
+                    try:
+                        j = f.result()
+                        arr = items(j)
+                        if arr:
+                            all_items.extend(arr)
+                    except Exception as err:
+                        if not self.quiet:
+                            print(f"  [!] page fetch error: {err}", flush=True)
         if label:
             self.log(label, f"{len(all_items)} items / {pages} pages")
         return all_items
@@ -294,7 +321,7 @@ def fetch_home(api):
     }
 
 
-def fetch_flash(api, products, sections, add_product):
+def fetch_flash(api, products, sections, add_product, max_pages=100000):
     cfg = api.get_json("/product/api/v1/homepage-layouts/get-flash-sale-layouts-config")
     for c in cfg.get("data") or []:
         campaign_id = c.get("campaignId")
@@ -306,6 +333,7 @@ def fetch_flash(api, products, sections, add_product):
             ),
             page_info=lambda j: (j.get("data") or {}).get("pageInfo"),
             items=lambda j: (j.get("data") or {}).get("items") or [],
+            max_pages=max_pages,
             label=f"flash products ({cat(c.get('title'))}#{campaign_id})",
         )
         home = (api.get_json(f"/product/api/v1/flash-sales/get-homepage-product-list/{campaign_id}").get("data") or [])
@@ -328,14 +356,14 @@ def fetch_flash(api, products, sections, add_product):
         sections.append(sec)
 
 
-def fetch_builder_page(api, slug, label, products, sections, add_product):
+def fetch_builder_page(api, slug, label, products, sections, add_product, max_pages=100000):
     try:
         j = api.get_json(
             f"/product/api/v1/static-builder-pages/sbp/seg/page-builder-details/get-builder-page-details-v2/{slug}"
         )
     except Exception:
         if not api.quiet:
-            print(f"  skip builder page (not found): {slug}")
+            print(f"  skip builder page (not found): {slug}", flush=True)
         return None
     d = j.get("data")
     if not d:
@@ -362,6 +390,7 @@ def fetch_builder_page(api, slug, label, products, sections, add_product):
             ),
             page_info=lambda j: (j.get("data") or {}).get("pageInfo"),
             items=lambda j: (j.get("data") or {}).get("items") or [],
+            max_pages=max_pages,
             label=f"builder {slug} col {col_id}",
         )
         for it in items:
@@ -389,11 +418,12 @@ def fetch_category(api, node, path_name, cat_pages):
     return items
 
 
-def fetch_personalize(api):
+def fetch_personalize(api, max_pages=100000):
     return api.paginate(
         url_for=lambda p: f"/product/api/v1/personalize-product/get-products?currentPage={p}&rowsPerPage=50",
         page_info=lambda j: (j.get("data") or {}).get("pageInfo"),
         items=lambda j: (j.get("data") or {}).get("items") or [],
+        max_pages=max_pages,
         label="personalize/recommended",
     )
 
@@ -456,16 +486,16 @@ def main():
     api.log("home channels", len(home["channels"]))
     api.log("mega/offer/pop targets", f"{len(home['mega'])}/{len(home['offers'])}/{len(home['pop'])}")
 
-    fetch_flash(api, products, sections, add_product)
+    fetch_flash(api, products, sections, add_product, max_pages=cat_pages or 100000)
     section_slugs = []
     for o in home["mega"] + home["offers"] + home["pop"]:
         if o["slug"] not in section_slugs:
             section_slugs.append(o["slug"])
     for s in section_slugs:
         label = next((o["text"] for o in home["mega"] if o["slug"] == s), None)
-        fetch_builder_page(api, s, label, products, sections, add_product)
+        fetch_builder_page(api, s, label, products, sections, add_product, max_pages=cat_pages or 100000)
 
-    for it in fetch_personalize(api):
+    for it in fetch_personalize(api, max_pages=cat_pages or 100000):
         rec = normalize_category(it, "For You", "For You")
         if rec:
             add_product({**rec, "c": "For You", "t": "For You", "sc": "For You"})
